@@ -87,6 +87,10 @@ export class PluginRecoveryCoordinator {
     loader: RecoveryModuleLoader,
     explicitCleanup: boolean,
   ): Promise<PluginOperationOutcome> {
+    // RFC §3: an empty resource log has nothing to revoke, so its terminal state does
+    // not depend on the module still being loadable or matching a recovery digest.
+    if (record.operation.resources.length === 0) return this.#finish(record, explicitCleanup);
+
     let loaded: RecoveryModule;
     try {
       loaded = await loader(record);
@@ -110,7 +114,6 @@ export class PluginRecoveryCoordinator {
     if (descriptorProblem !== null) {
       return this.#recoveryUnavailable(record, [descriptorProblem]);
     }
-    if (record.operation.resources.length === 0) return this.#finish(record, explicitCleanup);
     if (loaded.module.recover === undefined) {
       return this.#recoveryUnavailable(record, [
         "Persisted resources exist but this module exports no recover(context) function.",
@@ -188,6 +191,7 @@ export class PluginRecoveryCoordinator {
     Reflect.deleteProperty(record, "quarantine");
     if (explicitCleanup || record.operation.operation === "dispose") {
       record.lifecycleState = "disposed";
+      if (record.operation.operation === "dispose") record.operation.disposeCompleted = true;
       Reflect.deleteProperty(record, "reasonCode");
     } else {
       record.lifecycleState = "blocked";

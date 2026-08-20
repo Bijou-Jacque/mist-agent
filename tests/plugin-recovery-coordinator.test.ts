@@ -180,28 +180,49 @@ describe("PluginRecoveryCoordinator fail-closed boundaries", () => {
     }
   });
 
-  it("finishes an interrupted zero-resource activation without requiring recover", async () => {
-    const store = freshStore();
-    store.save(interruptedRecord([]));
-    const host = new PluginTransactionHost({ store });
-    const module: PluginModuleV0 = {
-      async prepare() {
-        throw new Error("startup recovery must not call prepare");
-      },
-    };
+  it.each(["activate", "dispose"] as const)(
+    "finishes an interrupted zero-resource %s without loading the module",
+    async (operation) => {
+      const store = freshStore();
+      const base = interruptedRecord([]);
+      const interrupted: PluginAuthorityRecord = {
+        ...base,
+        lifecycleState: operation === "activate" ? "prepared" : "disposing",
+        operation: {
+          ...base.operation,
+          operation,
+          phase: operation === "activate" ? "activating" : "disposing",
+        },
+      };
+      store.save(interrupted);
+      const host = new PluginTransactionHost({ store });
+      let loaderCalls = 0;
 
-    const outcomes = await host.coordinateStartup(async () => ({ module, moduleRef, env: {} }));
+      const outcomes = await host.coordinateStartup(async () => {
+        loaderCalls += 1;
+        throw new Error("zero-resource coordination must not load a missing module");
+      });
 
-    expect(outcomes).toEqual([
-      {
-        pluginId: "fixture.plugin",
-        operationId: "operation-interrupted",
-        state: "blocked",
-        reasonCode: "ACTIVATE_FAILED",
-      },
-    ]);
-    expect(store.read("fixture.plugin").operation.phase).toBe("completed");
-  });
+      expect(outcomes).toEqual([
+        operation === "activate"
+          ? {
+              pluginId: "fixture.plugin",
+              operationId: "operation-interrupted",
+              state: "blocked",
+              reasonCode: "ACTIVATE_FAILED",
+            }
+          : {
+              pluginId: "fixture.plugin",
+              operationId: "operation-interrupted",
+              state: "disposed",
+            },
+      ]);
+      expect(loaderCalls).toBe(0);
+      const completed = store.read("fixture.plugin");
+      expect(completed.operation.phase).toBe("completed");
+      if (operation === "dispose") expect(completed.operation.disposeCompleted).toBe(true);
+    },
+  );
 
   it("requires recover whenever the interrupted operation logged resource records", async () => {
     const store = freshStore();
