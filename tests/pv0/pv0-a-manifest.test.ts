@@ -300,6 +300,45 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
     expect((parked2.config as { enabled: boolean }).enabled).toBe(false);
     expect((parked2.config as { settings: unknown }).settings).toEqual(settings);
     expect(host.publishedResources("demo.blocked")).toEqual([]);
+
+    // 崩溃窗回归（153/33F）：停用意图随 dispose 事务第一笔写盘——终态一旦 completed 必已双 false，
+    // 不依赖 host 返回后的补写；active 与 blocked 两路各验一例。
+    const crashCases = [
+      { id: "demo.crash-active", module },
+      { id: "demo.crash-blocked", module: blockedBase.module },
+    ] as const;
+    for (const crashCase of crashCases) {
+      const crashDir = join(root, `store-a07-${seq++}`);
+      const crashStore = new PluginOperationStore(crashDir);
+      const crashHost = new PluginTransactionHost({
+        store: crashStore,
+        newOperationId: () => `op-${seq++}`,
+      });
+      const crashBase = { ...base, pluginId: crashCase.id, module: crashCase.module };
+      await applyEnabledChange(crashHost, crashStore, {
+        ...crashBase,
+        config: { enabled: true, settings, environment: [], credentialRefs: {} },
+      });
+      const realSave = crashStore.save.bind(crashStore);
+      crashStore.save = (record: Parameters<typeof realSave>[0]) => {
+        realSave(record);
+        if (record.lifecycleState === "disposed" && record.operation.phase === "completed") {
+          throw new Error("crash after final save");
+        }
+      };
+      await expect(
+        applyEnabledChange(crashHost, crashStore, {
+          ...crashBase,
+          config: { enabled: false, settings, environment: [], credentialRefs: {} },
+        }),
+      ).rejects.toThrow("crash after final save");
+      const reopened = new PluginOperationStore(crashDir).read(crashCase.id);
+      expect(reopened.lifecycleState).toBe("disposed");
+      expect(reopened.operation.phase).toBe("completed");
+      expect(reopened.enabled).toBe(false);
+      expect((reopened.config as { enabled: boolean }).enabled).toBe(false);
+      expect((reopened.config as { settings: unknown }).settings).toEqual(settings);
+    }
   });
 
   it("[PV0-A08] plugin id 封口", async () => {

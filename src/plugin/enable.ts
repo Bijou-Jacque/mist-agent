@@ -59,10 +59,8 @@ export async function applyEnabledChange(
   const enabled = (request.config as { enabled: boolean }).enabled;
 
   if (!enabled) {
-    const outcome = await host.dispose(request.pluginId);
-    const record = store.read(request.pluginId);
-    store.save({ ...record, enabled: false, config: request.config });
-    return { ...outcome, state: store.read(request.pluginId).lifecycleState };
+    // 停用意图随 dispose 事务第一笔写盘（153/33F）：host 返回时权威已双 false，无第二完成点。
+    return host.dispose(request.pluginId, { config: request.config });
   }
 
   const existing = readIfPresent(store, request.pluginId);

@@ -200,10 +200,23 @@ export class PluginTransactionHost {
     return this.#outcome(record);
   }
 
-  async dispose(pluginId: string): Promise<PluginOperationOutcome> {
+  async dispose(
+    pluginId: string,
+    deactivation?: { readonly config: unknown },
+  ): Promise<PluginOperationOutcome> {
     const existing = this.#store.read(pluginId);
-    if (existing.lifecycleState === "quarantined") return this.#outcome(existing);
-    if (existing.lifecycleState === "disposed") return this.#outcome(existing);
+    // 停用意图（enabled=false + 本次全量 config）随 dispose 事务的第一笔写盘落地，
+    // 后续每代记录自然继承；不得依赖 host 返回后的补写（153/33F 崩溃窗）。
+    if (existing.lifecycleState === "quarantined" || existing.lifecycleState === "disposed") {
+      if (deactivation === undefined) return this.#outcome(existing);
+      const terminal: PluginAuthorityRecord = {
+        ...existing,
+        enabled: false,
+        config: deactivation.config,
+      };
+      this.#store.save(terminal);
+      return this.#outcome(terminal);
+    }
     const runtime = this.#active.get(pluginId);
     if (runtime === undefined) {
       if (
@@ -218,6 +231,7 @@ export class PluginTransactionHost {
       // quarantined 仍只走显式 retryCleanup，不经此路）。
       const parked: PluginAuthorityRecord = {
         ...existing,
+        ...(deactivation === undefined ? {} : { enabled: false, config: deactivation.config }),
         lifecycleState: "disposing",
         operation: {
           operationId: this.#newOperationId(),
@@ -244,6 +258,7 @@ export class PluginTransactionHost {
     const operationId = this.#newOperationId();
     const record: PluginAuthorityRecord = {
       ...existing,
+      ...(deactivation === undefined ? {} : { enabled: false, config: deactivation.config }),
       lifecycleState: "disposing",
       operation: {
         operationId,
