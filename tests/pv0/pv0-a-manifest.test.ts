@@ -25,6 +25,7 @@ import {
   checkInstanceConfig,
   discoverPlugin,
 } from "../../src/plugin/discovery.ts";
+import { applyEnabledChange } from "../../src/plugin/enable.ts";
 import { resolveEnvironment } from "../../src/plugin/environment.ts";
 import type { LifecycleState } from "../../src/plugin/lifecycle.ts";
 import type { PluginInstanceConfig, PluginManifestV0 } from "../../src/plugin/manifest.ts";
@@ -198,13 +199,16 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
   it("[PV0-A07] 停用是真卸载", async () => {
     const store = new PluginOperationStore(join(root, `store-a07-${seq++}`));
     const host = new PluginTransactionHost({ store, newOperationId: () => `op-${seq++}` });
+    const discovered = await discoverPlugin(await pkg(manifestOf({ id: "demo.toggle" })), HOST);
+    expect(discovered.ok).toBe(true);
+    if (!discovered.ok) return;
     const calls: string[] = [];
-    const module: PluginModuleV0 = {
-      async prepare(context) {
+    const module = {
+      async prepare(context: import("../../src/plugin/types.ts").PluginPrepareContext) {
         calls.push("prepare");
         context.register({
           id: "res-1",
-          kind: "tool",
+          kind: "tool" as const,
           recoveryKey: "rk-1",
           async activate() {
             calls.push("resource.activate");
@@ -213,7 +217,7 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
             calls.push("resource.dispose");
           },
         });
-        const prepared: PreparedPlugin = {
+        return {
           async activate() {
             calls.push("publish");
             return {
@@ -227,37 +231,46 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
             calls.push("rollback");
           },
         };
-        return prepared;
       },
     };
-    const request = {
+    const base = {
       pluginId: "demo.toggle",
-      moduleRef: moduleRefFromSource("demo-toggle-v1"),
+      manifest: discovered.manifest,
       module,
-      config: { keep: "my-settings" },
-      env: {},
-      bindings: {},
-      verifiedScope: {},
+      moduleRef: moduleRefFromSource("demo-toggle-v1"),
+      resolveSecret: () => "unused",
     };
-    const on = await host.activate(request);
+    const settings = { keep: "my-settings" };
+
+    // 生产入口：config.enabled=true → 完整注册事务
+    const on = await applyEnabledChange(host, store, {
+      ...base,
+      config: { enabled: true, settings, environment: [], credentialRefs: {} },
+    });
     expect(on.state).toBe("active");
     expect(host.publishedResources("demo.toggle")).toHaveLength(1);
 
-    // enabled true→false：完整经过 dispose——能力与资源不可达，设置仍在
-    const off = await host.dispose("demo.toggle");
+    // 生产入口：enabled true→false → 完整卸载；能力与资源不可达 设置仍在
+    const off = await applyEnabledChange(host, store, {
+      ...base,
+      config: { enabled: false, settings, environment: [], credentialRefs: {} },
+    });
     expect(off.state).toBe("disposed");
     expect(host.publishedResources("demo.toggle")).toEqual([]);
     const parked = store.read("demo.toggle");
-    expect(parked.config).toEqual({ keep: "my-settings" });
+    expect(parked.enabled).toBe(false);
+    expect((parked.config as { settings: unknown }).settings).toEqual(settings);
     expect(calls).toContain("resource.dispose");
     expect(calls).toContain("plugin.dispose");
 
-    // 重新启用：重新走完整注册事务，不复用旧 handle（prepare/activate 计数再涨）
+    // 生产入口：false→true → 重新 validate/prepare/activate 不复用旧 handle
     const before = calls.length;
-    const on2 = await host.activate(request);
+    const on2 = await applyEnabledChange(host, store, {
+      ...base,
+      config: { enabled: true, settings, environment: [], credentialRefs: {} },
+    });
     expect(on2.state).toBe("active");
-    const rerun = calls.slice(before);
-    expect(rerun).toEqual(["prepare", "resource.activate", "publish"]);
+    expect(calls.slice(before)).toEqual(["prepare", "resource.activate", "publish"]);
     expect(host.publishedResources("demo.toggle")).toHaveLength(1);
   });
 
