@@ -6,8 +6,9 @@
  * honest `it.todo` — fixture-backed stubs must be declared STUBBED in the PR body,
  * and nothing here is allowed to impersonate green.
  *
- * Item source of truth: acceptance/plugin-protocol-v0.md (titles copied verbatim).
- * Awaits: host manifest validate/discover/prepare semantics (PR① post-#62).
+ * Item source of truth: acceptance/plugin-protocol-v0.md at the #62 freeze point
+ * (main@acdfcab2); titles copied verbatim.
+ * Awaits: host manifest validate/discover/prepare semantics (PR① semantics).
  */
 import { describe, it } from "vitest";
 
@@ -21,4 +22,5 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
   it.todo("[PV0-A07] 停用是真卸载");
   it.todo("[PV0-A08] plugin id 封口");
   it.todo("[PV0-A09] env 绑定形状不可混用");
+  it.todo("[PV0-A10] env 只经 context 交付");
 });

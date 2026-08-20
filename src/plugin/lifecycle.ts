@@ -1,21 +1,23 @@
 /**
  * Plugin Protocol v0 — lifecycle state machine (pure, zero IO).
  *
- * Every edge below cites docs/design/plugin-protocol-v0.md; nothing here is invented.
- * The table is data, `transition()` is a total pure function over it, so PV0 tests and
- * ②段's recovery coordinator can both consume it without side effects.
+ * Every edge below is copied from the RFC state diagram and its surrounding rules in
+ * docs/design/plugin-protocol-v0.md §3 (frozen at the #62 merge, main@acdfcab2);
+ * nothing here is invented. The table is data, `transition()` is a total pure function
+ * over it, so PV0 tests and ②段's recovery coordinator can both consume it without
+ * side effects.
  *
- *   discovered → validated → prepared → active → disposing → disposed   (RFC L191)
- *        └───────────┴───────────┴──────────┴──────────┴→ blocked       (RFC L193)
- *   prepared  ─ rollback → blocked（保留启用意图）                        (RFC L194)
- *   disposing ─ dispose 不完整 → quarantined                             (RFC L195)
- *   quarantined ─ 显式清理重试成功 → disposed；失败 → quarantined          (RFC L197-198)
- *   blocked ─ 显式修复/用户重试 → discovered（重走完整生命周期）            (RFC L200)
- *   blocked ─ 显式停用并清理 → disposing                                  (RFC L201)
+ *   discovered → validated → prepared → active → disposing → disposed
+ *        └───────────┴───────────┴──────────┴──────────┴→ blocked
+ *   prepared  ─ rollback → blocked（保留启用意图）
+ *   disposing ─ dispose 不完整 → quarantined
+ *   quarantined ─ 显式清理重试成功 → disposed；失败 → quarantined
+ *   blocked ─ 显式修复/用户重试 → discovered（重走完整生命周期）
+ *   blocked ─ 显式停用并清理 → disposing
  *
- * Explicitly forbidden (asserted by absence + tests): blocked → active direct, any
- * automatic blocked → ready (RFC L206); quarantined 下重复 dispose 幂等返回
- * quarantined，不算显式重试 (RFC L238, L245-246); disposed is terminal.
+ * Explicitly forbidden (asserted by absence + tests, RFC §3 blocked/quarantined rules):
+ * blocked → active direct, any automatic blocked → ready; quarantined 下重复 dispose
+ * 幂等返回 quarantined，不算显式重试；disposed is terminal.
  */
 
 export type LifecycleState =
@@ -51,7 +53,7 @@ type TransitionTable = {
   readonly [S in LifecycleState]?: { readonly [E in LifecycleEvent]?: LifecycleState };
 };
 
-/** Every legal edge of the v0 lifecycle. Data only — consult the header for RFC line refs. */
+/** Every legal edge of the v0 lifecycle. Data only — consult the header for RFC refs. */
 export const LIFECYCLE_TRANSITIONS: TransitionTable = {
   discovered: {
     validate: "validated",

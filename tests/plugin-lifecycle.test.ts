@@ -15,13 +15,13 @@ const happyPath: ReadonlyArray<readonly [LifecycleState, LifecycleEvent, Lifecyc
 ];
 
 describe("plugin lifecycle transition table (RFC docs/design/plugin-protocol-v0.md)", () => {
-  it("walks the main chain discovered → disposed (RFC L191)", () => {
+  it("walks the main chain discovered → disposed (RFC §3 主链)", () => {
     for (const [from, event, to] of happyPath) {
       expect(transition(from, event)).toEqual({ ok: true, state: to });
     }
   });
 
-  it("drops to blocked from every pre-terminal working state (RFC L193)", () => {
+  it("drops to blocked from every pre-terminal working state (RFC §3 状态图)", () => {
     const failable: LifecycleState[] = [
       "discovered",
       "validated",
@@ -34,18 +34,18 @@ describe("plugin lifecycle transition table (RFC docs/design/plugin-protocol-v0.
     }
   });
 
-  it("rolls back prepared to blocked, keeping intent out of band (RFC L194)", () => {
+  it("rolls back prepared to blocked, keeping intent out of band (RFC §3 rollback 边)", () => {
     expect(transition("prepared", "rollback")).toEqual({ ok: true, state: "blocked" });
   });
 
-  it("routes incomplete dispose to quarantined (RFC L195)", () => {
+  it("routes incomplete dispose to quarantined (RFC §3 dispose 不完整)", () => {
     expect(transition("disposing", "dispose_incomplete")).toEqual({
       ok: true,
       state: "quarantined",
     });
   });
 
-  it("leaves blocked only via explicit retry (restart lifecycle) or explicit deactivation (RFC L200-201, L206)", () => {
+  it("leaves blocked only via explicit retry (restart lifecycle) or explicit deactivation (RFC §3 blocked 出边规则)", () => {
     expect(transition("blocked", "retry_from_blocked")).toEqual({ ok: true, state: "discovered" });
     expect(transition("blocked", "deactivate_from_blocked")).toEqual({
       ok: true,
@@ -63,7 +63,7 @@ describe("plugin lifecycle transition table (RFC docs/design/plugin-protocol-v0.
     });
   });
 
-  it("quarantined: explicit cleanup retry is the only exit; repeated dispose is an idempotent no-op edge (RFC L197-198, L238, L245-246)", () => {
+  it("quarantined: explicit cleanup retry is the only exit; repeated dispose is an idempotent no-op edge (RFC §3 quarantined 规则)", () => {
     expect(transition("quarantined", "retry_cleanup_success")).toEqual({
       ok: true,
       state: "disposed",

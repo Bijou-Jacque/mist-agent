@@ -6,8 +6,9 @@
  * honest `it.todo` — fixture-backed stubs must be declared STUBBED in the PR body,
  * and nothing here is allowed to impersonate green.
  *
- * Item source of truth: acceptance/plugin-protocol-v0.md (titles copied verbatim).
- * Awaits: transaction engine + operation log (PR② semantics post-#62).
+ * Item source of truth: acceptance/plugin-protocol-v0.md at the #62 freeze point
+ * (main@acdfcab2); titles copied verbatim.
+ * Awaits: transaction engine + operation log + recovery (PR② semantics).
  */
 import { describe, it } from "vitest";
 
@@ -24,4 +25,6 @@ describe("PV0 series C — 事务注册、隔离与注销 (RFC §3/§4)", () => 
   it.todo("[PV0-C10] 生命周期中断可恢复");
   it.todo("[PV0-C11] 权威状态先于公开索引");
   it.todo("[PV0-C12] quarantined 只能显式清理重试");
+  it.todo("[PV0-C13] 两个 activate 顺序固定");
+  it.todo("[PV0-C14] 恢复凭据防模块漂移");
 });

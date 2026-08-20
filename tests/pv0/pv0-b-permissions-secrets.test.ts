@@ -6,7 +6,8 @@
  * honest `it.todo` — fixture-backed stubs must be declared STUBBED in the PR body,
  * and nothing here is allowed to impersonate green.
  *
- * Item source of truth: acceptance/plugin-protocol-v0.md (titles copied verbatim).
+ * Item source of truth: acceptance/plugin-protocol-v0.md at the #62 freeze point
+ * (main@acdfcab2); titles copied verbatim.
  * Awaits: permission narrowing / secret gates / tool translation subsystems (post-单B scope, declare STUBBED).
  */
 import { describe, it } from "vitest";
@@ -25,6 +26,5 @@ describe("PV0 series B — 权限、secret 与工具翻译 (RFC §2/§6/§8)", (
   it.todo("[PV0-B11] 未声明或漂移的注入显式拒绝");
   it.todo("[PV0-B12] secret 不经插件产物进入模型");
   it.todo("[PV0-B13] 注入随停用与卸载撤下");
-  // [PV0-B14] secret 只走 environment.secretRef / credentialRefs（#62 候选新增）——
-  // 待 #62 合入后按合入版措辞补为正式条目，此前不虚构题面。
+  it.todo("[PV0-B14] secret 不落 settings 通道");
 });

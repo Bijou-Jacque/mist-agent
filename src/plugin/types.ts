@@ -1,35 +1,58 @@
 /**
  * Plugin Protocol v0 — canonical host-side types.
  *
- * Source of truth: docs/design/plugin-protocol-v0.md (§2 manifest, §3 transactions,
- * §8 stable failure semantics). These six interfaces are the authoritative versions
- * of the consumer-side copies in webui/mist-plugin.ts (#61) and are shape-compatible
- * with them by construction; the webui copy re-points here in a follow-up PR.
+ * Source of truth: docs/design/plugin-protocol-v0.md at the #62 freeze point
+ * (main@acdfcab2, RFC §2 manifest/env delivery, §3 transactions/recovery,
+ * §8 stable failure semantics). Interface members and comments follow the merged
+ * wording verbatim; the consumer-side copies in webui/mist-plugin.ts (#61) predate
+ * #62 and re-point here in a follow-up PR.
  *
- * Scope note (#76 单B PR①): types and lifecycle skeleton only — no runtime semantics.
- * Everything fenced as `@provisional` tracks the #62 candidate (recovery descriptors,
- * operation ids) and is to be reconciled verbatim with the merged wording of #62.
+ * Scope note (#76 单B PR①): type surface only — no runtime semantics in this commit.
  */
 
-/** A single capability-backed resource a plugin asks the host to register. RFC §3. */
+/** Resource categories a plugin may register through its prepare context. RFC §3. */
+export type ResourceKind = "route" | "tool" | "listener" | "timer" | "connection";
+
+/**
+ * A single capability-backed resource a plugin asks the host to register. RFC §3.
+ * `recoveryKey` is stable and non-secret, unique within one operation, written to the
+ * host's registration log BEFORE the first side effect; it can only locate recovery
+ * cleanup — never carries secret values, serialized functions, or closures.
+ */
 export interface ResourceDeclaration {
   readonly id: string;
-  readonly kind: "route" | "tool" | "listener" | "timer" | "connection";
+  readonly kind: ResourceKind;
   readonly capabilityId?: string;
+  readonly recoveryKey: string;
+  /** Called by the host during the atomic commit phase; must not be reachable during prepare. */
   activate(): Promise<void>;
   dispose(): Promise<void>;
 }
 
-/** Host receipt for one registered resource; revocation is the host's lever. RFC §3. */
+/**
+ * Host receipt for one registered resource, held by the CURRENT host process only —
+ * the registration log persists recovery descriptors, never function objects; after a
+ * restart, revocation belongs to {@link RecoveredPlugin.revoke}. Idempotent. RFC §3, glossary.
+ */
 export interface DisposableHandle {
   readonly id: string;
   revoke(): Promise<void>;
 }
 
-/** What a plugin sees during prepare: identity, validated config, and a registrar. RFC §3. */
+/**
+ * What a plugin sees during prepare. RFC §2/§3 (#62):
+ * - `operationId`: host-generated, persisted to disk BEFORE `prepare` is called; also
+ *   the stable recovery key for this whole prepare.
+ * - `env`: read-only map delivered ONLY through this context — keys are exactly the
+ *   manifest-declared and bound `env` names (secretRef entries arrive resolved);
+ *   undeclared names never appear, unbound optionals are absent, and plugins must not
+ *   read declared names from `process.env`.
+ */
 export interface PluginPrepareContext {
   readonly pluginId: string;
+  readonly operationId: string;
   readonly config: unknown;
+  readonly env: Readonly<Record<string, string>>;
   register(resource: ResourceDeclaration): DisposableHandle;
 }
 
@@ -39,20 +62,85 @@ export interface DisposeReport {
   readonly failed: readonly { id: string; reasonCode: ReasonCode }[];
 }
 
-/** An activated plugin. Callers MUST inspect `failed[]` on dispose. RFC §3. */
+/** An activated (published) plugin. Callers MUST inspect `failed[]` on dispose. Idempotent. RFC §3. */
 export interface ActivePlugin {
   dispose(): Promise<DisposeReport>;
 }
 
-/** A prepared-but-unpublished plugin: activate commits, rollback reverses. RFC §3. */
+/**
+ * A prepared-but-unpublished plugin. RFC §3 (#62 two-activate order): the host first
+ * calls every `ResourceDeclaration.activate()` in registration order (commit, still
+ * unreachable), writes the active authority record, and only then calls
+ * `activate()` here exactly once — the sole publication step. The plugin may refuse a
+ * publication attempted while some of its resources were never committed
+ * (`ACTIVATE_FAILED`), and the host must not treat that refusal as a plugin defect.
+ * `rollback()` is the idempotent reverse of the whole prepare; after a host restart it
+ * must be re-established via {@link RecoveredPlugin.rollback} — old closures are gone.
+ */
 export interface PreparedPlugin {
   activate(): Promise<ActivePlugin>;
   rollback(): Promise<void>;
 }
 
 /**
- * Stable failure reason codes, verbatim from RFC §8. Details may be appended to an
- * error, but never substituted for the code.
+ * One resource's persisted recovery record, as replayed to `recover()`. RFC §3 (#62).
+ */
+export interface RecoveryResourceRecord {
+  readonly id: string;
+  readonly kind: ResourceKind;
+  readonly capabilityId?: string;
+  readonly recoveryKey: string;
+  readonly phase: "registered" | "ready" | "revoked";
+}
+
+/**
+ * What a crashed-and-restarted host hands to `PluginModuleV0.recover` — in-memory
+ * handles died with the old process, so coordination works from persisted descriptors
+ * only. The host may call `recover` only after re-parsing the module and matching its
+ * recomputed content digest against the logged `moduleRef`. RFC §3 (#62).
+ */
+export interface PluginRecoveryContext {
+  readonly pluginId: string;
+  readonly operationId: string;
+  readonly operation: "activate" | "dispose";
+  readonly config: unknown;
+  readonly env: Readonly<Record<string, string>>;
+  readonly resources: readonly RecoveryResourceRecord[];
+}
+
+/**
+ * Purpose-built revoker rebuilt during startup coordination. All members idempotent.
+ * RFC §3 (#62): `revoke` undoes one resource by its record, `rollback` is the recovery
+ * reverse of the whole prepare, `dispose` finishes an interrupted dispose.
+ */
+export interface RecoveredPlugin {
+  revoke(resource: RecoveryResourceRecord): Promise<void>;
+  rollback(): Promise<void>;
+  dispose(): Promise<DisposeReport>;
+}
+
+/**
+ * Shape of an upgrade/migration request (RFC §7). The concrete shape belongs to the
+ * E-series scope and is not consumed by 单B; kept opaque until that work lands.
+ */
+export type MigrationRequest = unknown;
+
+/**
+ * A plugin module's exported surface. RFC §3 (#62 final ruling): `recover` is an
+ * OPTIONAL member — plugins that never register resources through their context may
+ * omit it (their operation logs hold no resource records, so coordination needs no
+ * revoker); a module WITH logged resource records but no `recover` export goes to
+ * `quarantined + RECOVERY_HANDLE_UNAVAILABLE`.
+ */
+export interface PluginModuleV0 {
+  migrate?(request: MigrationRequest): Promise<unknown>;
+  prepare(context: PluginPrepareContext): Promise<PreparedPlugin>;
+  recover?(context: PluginRecoveryContext): Promise<RecoveredPlugin>;
+}
+
+/**
+ * Stable failure reason codes, verbatim from RFC §8 at the #62 freeze point. Details
+ * may be appended to an error, but never substituted for the code.
  */
 export type ReasonCode =
   | "MANIFEST_INVALID"
@@ -65,6 +153,7 @@ export type ReasonCode =
   | "PERMISSION_DENIED"
   | "PREPARE_FAILED"
   | "ACTIVATE_FAILED"
+  | "RECOVERY_HANDLE_UNAVAILABLE"
   | "MIGRATION_FAILED"
   | "UPGRADE_PERMISSION_CONFIRMATION_REQUIRED"
   | "DISPOSE_INCOMPLETE"
@@ -73,23 +162,3 @@ export type ReasonCode =
   | "CONTEXT_INJECTION_MISMATCH"
   | "SENSITIVE_OUTPUT_BLOCKED"
   | "CAPABILITY_UNVERIFIED";
-
-/**
- * @provisional Pending #62 merge — reconcile names and shapes verbatim with the merged
- * wording before any implementation lands (单B ②段 owns the semantics; these exist only
- * so the type surface has a named seam). Do not implement against these yet.
- */
-export type OperationId = string;
-
-/** @provisional See {@link OperationId} note. Identifies a revocable side effect across restarts. */
-export type RecoveryKey = string;
-
-/**
- * @provisional #62 candidate: what a crashed-and-restarted host gets back for coordination —
- * in-memory handles died with the old process, so recovery works from persisted descriptors.
- * Shape TBD by merged #62; interface reserved as an import seam for ②段.
- */
-export interface RecoveredPlugin {
-  readonly pluginId: string;
-  readonly operationId: OperationId;
-}

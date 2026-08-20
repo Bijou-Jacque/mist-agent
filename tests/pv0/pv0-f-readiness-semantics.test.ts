@@ -6,7 +6,8 @@
  * honest `it.todo` — fixture-backed stubs must be declared STUBBED in the PR body,
  * and nothing here is allowed to impersonate green.
  *
- * Item source of truth: acceptance/plugin-protocol-v0.md (titles copied verbatim).
+ * Item source of truth: acceptance/plugin-protocol-v0.md at the #62 freeze point
+ * (main@acdfcab2); titles copied verbatim.
  * Awaits: readiness lamps + reason-code wiring (spans PR①-③).
  */
 import { describe, it } from "vitest";
