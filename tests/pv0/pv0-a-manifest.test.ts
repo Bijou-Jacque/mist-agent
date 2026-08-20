@@ -259,6 +259,7 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
     expect(host.publishedResources("demo.toggle")).toEqual([]);
     const parked = store.read("demo.toggle");
     expect(parked.enabled).toBe(false);
+    expect((parked.config as { enabled: boolean }).enabled).toBe(false);
     expect((parked.config as { settings: unknown }).settings).toEqual(settings);
     expect(calls).toContain("resource.dispose");
     expect(calls).toContain("plugin.dispose");

@@ -36,8 +36,9 @@ export type EnabledChangeResult =
 
 /**
  * 应用一次 enabled 变更。目标值取自 config.enabled 本身（配置即意图 无第二真源）：
- * - false：完整卸载（host.dispose 逆序撤资源+插件级 dispose）后把 enabled=false 落权威
- *   记录——设置仍在（config 留档）能力与资源不可达；
+ * - false：完整卸载（host.dispose 逆序撤资源+插件级 dispose）后把 enabled=false 连同
+ *   本次全量 config 原子落权威记录（config.enabled 与顶层 enabled 不得分叉）——设置仍在
+ *   能力与资源不可达；
  * - true：重新走完整链——就绪门 → env 装配 → 全新注册事务（新 operationId 不复用旧
  *   handle）；就绪门不过按其 reasonCode fail-closed 不进 prepare。
  */
@@ -60,8 +61,7 @@ export async function applyEnabledChange(
   if (!enabled) {
     const outcome = await host.dispose(request.pluginId);
     const record = store.read(request.pluginId);
-    record.enabled = false;
-    store.save(record);
+    store.save({ ...record, enabled: false, config: request.config });
     return { ...outcome, state: store.read(request.pluginId).lifecycleState };
   }
 
