@@ -1,0 +1,30 @@
+/**
+ * PV0 acceptance suite — series B: 权限、secret 与工具翻译 (RFC §2/§6/§8)
+ *
+ * Doctrine (#76, 旦九 2026-08-20 ruling): PV0 runs as an independent Vitest suite,
+ * NOT inside the six-lights acceptance driver. Every unimplemented item stays an
+ * honest `it.todo` — fixture-backed stubs must be declared STUBBED in the PR body,
+ * and nothing here is allowed to impersonate green.
+ *
+ * Item source of truth: acceptance/plugin-protocol-v0.md (titles copied verbatim).
+ * Awaits: permission narrowing / secret gates / tool translation subsystems (post-单B scope, declare STUBBED).
+ */
+import { describe, it } from "vitest";
+
+describe("PV0 series B — 权限、secret 与工具翻译 (RFC §2/§6/§8)", () => {
+  it.todo("[PV0-B01] 字面量权限真收窄");
+  it.todo("[PV0-B02] 空数组不是通配");
+  it.todo("[PV0-B03] effect 不可降级");
+  it.todo("[PV0-B04] secret 全面不落字");
+  it.todo("[PV0-B05] 翻译不扩权");
+  it.todo("[PV0-B06] MCP 经 host 收编");
+  it.todo("[PV0-B07] 翻译输出是闭集");
+  it.todo("[PV0-B08] 完整用户输入不进诊断");
+  it.todo("[PV0-B09] lazy 不预注入 schema");
+  it.todo("[PV0-B10] 注入正文安装前可审计");
+  it.todo("[PV0-B11] 未声明或漂移的注入显式拒绝");
+  it.todo("[PV0-B12] secret 不经插件产物进入模型");
+  it.todo("[PV0-B13] 注入随停用与卸载撤下");
+  // [PV0-B14] secret 只走 environment.secretRef / credentialRefs（#62 候选新增）——
+  // 待 #62 合入后按合入版措辞补为正式条目，此前不虚构题面。
+});
