@@ -13,18 +13,46 @@
 import { describe, it } from "vitest";
 
 describe("PV0 series B — 权限、secret 与工具翻译 (RFC §2/§6/§8)", () => {
-  it.todo("[PV0-B01] 字面量权限真收窄");
-  it.todo("[PV0-B02] 空数组不是通配");
-  it.todo("[PV0-B03] effect 不可降级");
-  it.todo("[PV0-B04] secret 全面不落字");
-  it.todo("[PV0-B05] 翻译不扩权");
-  it.todo("[PV0-B06] MCP 经 host 收编");
-  it.todo("[PV0-B07] 翻译输出是闭集");
-  it.todo("[PV0-B08] 完整用户输入不进诊断");
-  it.todo("[PV0-B09] lazy 不预注入 schema");
-  it.todo("[PV0-B10] 注入正文安装前可审计");
-  it.todo("[PV0-B11] 未声明或漂移的注入显式拒绝");
-  it.todo("[PV0-B12] secret 不经插件产物进入模型");
-  it.todo("[PV0-B13] 注入随停用与卸载撤下");
-  it.todo("[PV0-B14] secret 不落 settings 通道");
+  it.todo(
+    "[PV0-B01] 字面量权限真收窄 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B02] 空数组不是通配 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B03] effect 不可降级 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B04] secret 全面不落字 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B05] 翻译不扩权 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B06] MCP 经 host 收编 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B07] 翻译输出是闭集 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B08] 完整用户输入不进诊断 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B09] lazy 不预注入 schema — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B10] 注入正文安装前可审计 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B11] 未声明或漂移的注入显式拒绝 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B12] secret 不经插件产物进入模型 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B13] 注入随停用与卸载撤下 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-B14] secret 不落 settings 通道 — STUBBED-PENDING(permission-narrowing / secret-gate / tool-translation subsystems — 单B 范围外)",
+  );
 });

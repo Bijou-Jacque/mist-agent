@@ -13,10 +13,22 @@
 import { describe, it } from "vitest";
 
 describe("PV0 series F — readiness 与稳定失败语义 (RFC §4/§8)", () => {
-  it.todo("[PV0-F01] readiness 有 scope");
-  it.todo("[PV0-F02] 原因码稳定可判");
-  it.todo("[PV0-F03] 每条约束都有指定红格");
-  it.todo("[PV0-F04] boot-time 不变量不可卸载");
-  it.todo("[PV0-F05] 壳共享魂私有");
-  it.todo("[PV0-F06] ready 必须有当前 scope 的可用性收据");
+  it.todo(
+    "[PV0-F01] readiness 有 scope — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-F02] 原因码稳定可判 — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-F03] 每条约束都有指定红格 — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-F04] boot-time 不变量不可卸载 — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-F05] 壳共享魂私有 — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
+  it.todo(
+    "[PV0-F06] ready 必须有当前 scope 的可用性收据 — STUBBED-PENDING(readiness lamps + capability receipts — 单B 范围外)",
+  );
 });
