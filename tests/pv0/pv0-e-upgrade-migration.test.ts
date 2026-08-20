@@ -13,11 +13,15 @@
 import { describe, it } from "vitest";
 
 describe("PV0 series E — 版本兼容与升级迁移 (RFC §7)", () => {
-  it.todo("[PV0-E01] 成功升级原子切换");
-  it.todo("[PV0-E02] 迁移抛错回到 v1");
-  it.todo("[PV0-E03] 坏目标 schema 回到 v1");
-  it.todo("[PV0-E04] v2 激活失败回到 v1");
-  it.todo("[PV0-E05] 缺迁移路径拒绝升级");
-  it.todo("[PV0-E06] 迁移不接触 secret 值");
-  it.todo("[PV0-E07] 升级扩权须显式确认");
+  it.todo("[PV0-E01] 成功升级原子切换 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)");
+  it.todo("[PV0-E02] 迁移抛错回到 v1 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)");
+  it.todo(
+    "[PV0-E03] 坏目标 schema 回到 v1 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)",
+  );
+  it.todo("[PV0-E04] v2 激活失败回到 v1 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)");
+  it.todo("[PV0-E05] 缺迁移路径拒绝升级 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)");
+  it.todo(
+    "[PV0-E06] 迁移不接触 secret 值 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)",
+  );
+  it.todo("[PV0-E07] 升级扩权须显式确认 — STUBBED-PENDING(upgrade/migration engine — 单B 范围外)");
 });

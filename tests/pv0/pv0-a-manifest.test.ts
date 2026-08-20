@@ -14,6 +14,7 @@
  * dispose/prepare 交付面（②段事务与恢复之后的装配层），不提前冒绿。
  */
 
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,8 +25,13 @@ import {
   checkInstanceConfig,
   discoverPlugin,
 } from "../../src/plugin/discovery.ts";
+import { resolveEnvironment } from "../../src/plugin/environment.ts";
 import type { LifecycleState } from "../../src/plugin/lifecycle.ts";
 import type { PluginInstanceConfig, PluginManifestV0 } from "../../src/plugin/manifest.ts";
+import { moduleRefFromSource } from "../../src/plugin/module-ref.ts";
+import { PluginOperationStore } from "../../src/plugin/operation-store.ts";
+import { PluginTransactionHost } from "../../src/plugin/transaction-host.ts";
+import type { PluginModuleV0, PreparedPlugin } from "../../src/plugin/types.ts";
 
 const HOST = { hostVersion: "0.4.0", activeIds: new Set<string>() } as const;
 
@@ -189,9 +195,71 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
     expect(probeCount()).toBe(0);
   });
 
-  it.todo(
-    "[PV0-A07] 停用是真卸载 — awaits dispose/re-enable 装配层（②段事务之后）：enabled 切换须走完整卸载与重注册",
-  );
+  it("[PV0-A07] 停用是真卸载", async () => {
+    const store = new PluginOperationStore(join(root, `store-a07-${seq++}`));
+    const host = new PluginTransactionHost({ store, newOperationId: () => `op-${seq++}` });
+    const calls: string[] = [];
+    const module: PluginModuleV0 = {
+      async prepare(context) {
+        calls.push("prepare");
+        context.register({
+          id: "res-1",
+          kind: "tool",
+          recoveryKey: "rk-1",
+          async activate() {
+            calls.push("resource.activate");
+          },
+          async dispose() {
+            calls.push("resource.dispose");
+          },
+        });
+        const prepared: PreparedPlugin = {
+          async activate() {
+            calls.push("publish");
+            return {
+              async dispose() {
+                calls.push("plugin.dispose");
+                return { revoked: ["res-1"], failed: [] };
+              },
+            };
+          },
+          async rollback() {
+            calls.push("rollback");
+          },
+        };
+        return prepared;
+      },
+    };
+    const request = {
+      pluginId: "demo.toggle",
+      moduleRef: moduleRefFromSource("demo-toggle-v1"),
+      module,
+      config: { keep: "my-settings" },
+      env: {},
+      bindings: {},
+      verifiedScope: {},
+    };
+    const on = await host.activate(request);
+    expect(on.state).toBe("active");
+    expect(host.publishedResources("demo.toggle")).toHaveLength(1);
+
+    // enabled true→false：完整经过 dispose——能力与资源不可达，设置仍在
+    const off = await host.dispose("demo.toggle");
+    expect(off.state).toBe("disposed");
+    expect(host.publishedResources("demo.toggle")).toEqual([]);
+    const parked = store.read("demo.toggle");
+    expect(parked.config).toEqual({ keep: "my-settings" });
+    expect(calls).toContain("resource.dispose");
+    expect(calls).toContain("plugin.dispose");
+
+    // 重新启用：重新走完整注册事务，不复用旧 handle（prepare/activate 计数再涨）
+    const before = calls.length;
+    const on2 = await host.activate(request);
+    expect(on2.state).toBe("active");
+    const rerun = calls.slice(before);
+    expect(rerun).toEqual(["prepare", "resource.activate", "publish"]);
+    expect(host.publishedResources("demo.toggle")).toHaveLength(1);
+  });
 
   it("[PV0-A08] plugin id 封口", async () => {
     for (const bad of ["Demo", "de mo", "de/mo", "../evil"]) {
@@ -249,7 +317,82 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
     // 明文 secret 不进入配置快照：判定层直接拒绝，本层不产生任何快照。
   });
 
-  it.todo(
-    "[PV0-A10] env 只经 context 交付 — awaits prepare 交付面（context.env 装配与 secretRef 执行边界解析，②段之后）",
-  );
+  it("[PV0-A10] env 只经 context 交付", async () => {
+    const manifest = (
+      (await discoverPlugin(
+        await pkg(
+          manifestOf({
+            id: "demo.envonly",
+            env: [
+              { name: "A", description: "", required: true, secret: false },
+              { name: "B", description: "", required: true, secret: true },
+              { name: "C", description: "", required: false, secret: false },
+            ],
+          }),
+        ),
+        HOST,
+      )) as { ok: true; manifest: import("../../src/plugin/manifest.ts").PluginManifestV0 }
+    ).manifest;
+
+    const goodConfig = {
+      enabled: true,
+      settings: {},
+      environment: [
+        { name: "A", value: "plain-a" },
+        { name: "B", secretRef: "vault:b" },
+      ],
+      credentialRefs: {},
+    };
+    const assembled = resolveEnvironment(manifest, goodConfig, () => "SECRET_SHOULD_NEVER_APPEAR");
+    expect(assembled.ok).toBe(true);
+    if (!assembled.ok) return;
+
+    process.env.D = "process-env-probe";
+    const store = new PluginOperationStore(join(root, `store-a10-${seq++}`));
+    const host = new PluginTransactionHost({ store, newOperationId: () => `op-${seq++}` });
+    let seenKeys: string[] = [];
+    let seenB = "";
+    const module: PluginModuleV0 = {
+      async prepare(context) {
+        seenKeys = Object.keys(context.env).sort();
+        seenB = context.env.B ?? "";
+        return {
+          async activate() {
+            return {
+              async dispose() {
+                return { revoked: [], failed: [] };
+              },
+            };
+          },
+          async rollback() {},
+        };
+      },
+    };
+    const outcome = await host.activate({
+      pluginId: "demo.envonly",
+      moduleRef: moduleRefFromSource("demo-envonly-v1"),
+      module,
+      config: { settingsOnly: true },
+      env: assembled.env,
+      bindings: { environment: goodConfig.environment },
+      verifiedScope: {},
+    });
+    expect(outcome.state).toBe("active");
+    // context.env 恰为 {A, B}（B 为已解析值）不含 C/D
+    expect(seenKeys).toEqual(["A", "B"]);
+    expect(seenB).toBe("SECRET_SHOULD_NEVER_APPEAR");
+    expect(assembled.env).not.toHaveProperty("C");
+    expect(assembled.env).not.toHaveProperty("D");
+    // 配置快照（磁盘权威文件）中 B 的解析值不出现
+    const snapshot = readFileSync(store.pathFor("demo.envonly"), "utf8");
+    expect(snapshot).not.toContain("SECRET_SHOULD_NEVER_APPEAR");
+    // 漏交 required：REQUIREMENT_MISSING
+    const missingRequired = resolveEnvironment(
+      manifest,
+      { ...goodConfig, environment: [{ name: "A", value: "plain-a" }] },
+      () => "x",
+    );
+    expect(missingRequired).toMatchObject({ ok: false, reasonCode: "REQUIREMENT_MISSING" });
+    Reflect.deleteProperty(process.env, "D");
+  });
 });
