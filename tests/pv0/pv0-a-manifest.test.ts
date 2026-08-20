@@ -155,42 +155,30 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
       const r = await discoverPlugin(await pkg(manifestOf(bad)), HOST);
       expect(r).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
     }
+    // 153/19F 反例一：词法干净但 symlink 逃根 —— 物理封口回归（entrypoint + source 两路）
+    const { symlink, mkdir: mkdirP, writeFile: writeF } = await import("node:fs/promises");
+    const outside = join(root, `outside-${seq++}`);
+    await mkdirP(outside, { recursive: true });
+    await writeF(join(outside, "index.js"), PROBE_ENTRY);
+    await writeF(join(outside, "creed.md"), "escaped");
+    const linkedPkg = await pkg(manifestOf({ entrypoint: "linked/index.js" }));
+    await symlink(outside, join(linkedPkg, "linked"), "dir");
+    const viaEntrySymlink = await discoverPlugin(linkedPkg, HOST);
+    expect(viaEntrySymlink).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
+    const linkedSrcPkg = await pkg(
+      manifestOf({
+        contextInjections: [{ id: "g", source: "linked/creed.md", scope: "resident" }],
+      }),
+    );
+    await symlink(outside, join(linkedSrcPkg, "linked"), "dir");
+    const viaSourceSymlink = await discoverPlugin(linkedSrcPkg, HOST);
+    expect(viaSourceSymlink).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
     expect(probeCount()).toBe(0); // 且无部分注册：本层不存在注册通道
   });
 
-  it("[PV0-A05] 缺要求不降级装", async () => {
-    const dir = await pkg(
-      manifestOf({
-        env: [{ name: "TOKEN_REF", description: "", required: true, secret: true }],
-        credentials: [{ slot: "brain", accepts: ["claude_oauth"], required: true }],
-      }),
-    );
-    const discovered = await discoverPlugin(dir, HOST);
-    expect(discovered.ok).toBe(true);
-    if (!discovered.ok) return;
-
-    const missingEnv: PluginInstanceConfig = {
-      enabled: true,
-      settings: {},
-      environment: [],
-      credentialRefs: { brain: { id: "r", type: "claude_oauth", issuerId: "i" } },
-    };
-    expect(checkInstanceConfig(discovered.manifest, missingEnv)).toMatchObject({
-      ok: false,
-      reasonCode: "REQUIREMENT_MISSING",
-    });
-
-    const missingCred: PluginInstanceConfig = {
-      enabled: true,
-      settings: {},
-      environment: [{ name: "TOKEN_REF", secretRef: "vault:t" }],
-      credentialRefs: {},
-    };
-    expect(checkInstanceConfig(discovered.manifest, missingCred)).toMatchObject({
-      ok: false,
-      reasonCode: "REQUIREMENT_MISSING",
-    });
-  });
+  it.todo(
+    "[PV0-A05] 缺要求不降级装 — REQUIREMENT_MISSING 判据已在 tests/plugin-manifest.test.ts 常驻；本题还要求 optional 缺失时 readiness 明列缺失 scope，readiness 投影未实现前不计绿（153/19F 裁定）",
+  );
 
   it("[PV0-A06] manifest 无需执行代码", async () => {
     // 探针 entrypoint 顶层即抛错；非法 manifest 校验后探针计数为零 = import 从未发生。

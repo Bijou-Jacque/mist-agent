@@ -10,11 +10,10 @@
  * 状态推进不自造：一律走 lifecycle.transition()，非法边由那张表拒绝。
  */
 
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { join, sep } from "node:path";
 import { type LifecycleState, transition } from "./lifecycle.ts";
 import {
-  type PluginInstanceConfig,
   type PluginManifestV0,
   checkIdConflict,
   validateBindings,
@@ -47,6 +46,47 @@ export interface DiscoveryHost {
   readonly activeIds: ReadonlySet<string>;
 }
 
+/**
+ * 物理封口（②段互审 153/19F 反例一）：词法封口挡不住 symlink——包内 `dist` 软链到
+ * 包外时 `dist/index.js` 词法干净却已逃根。故在 validated 之前对 entrypoint 与全部
+ * context injection source 做 realpath 收容检查：包根与目标都取 canonical 真身，
+ * 目标必须位于包根真身之内且为**普通文件**（regular-file 策略在此冻结：不是文件、
+ * 不存在、或真身逃根 一律 MANIFEST_INVALID fail-closed）。指向包根之内的软链合法——
+ * 不变量是「真身不出根」，不是「不许用链」。
+ */
+async function verifyContainedRegularFiles(
+  packageDir: string,
+  relativePaths: readonly string[],
+): Promise<string | null> {
+  let rootReal: string;
+  try {
+    rootReal = await realpath(packageDir);
+  } catch {
+    return `plugin package root is not resolvable: ${packageDir}`;
+  }
+  const rootPrefix = rootReal.endsWith(sep) ? rootReal : rootReal + sep;
+  for (const relativePath of relativePaths) {
+    let targetReal: string;
+    try {
+      targetReal = await realpath(join(packageDir, relativePath));
+    } catch {
+      return `declared file is missing or unresolvable: ${relativePath}`;
+    }
+    if (!targetReal.startsWith(rootPrefix)) {
+      return `declared file escapes the plugin root via symlink: ${relativePath}`;
+    }
+    try {
+      const info = await stat(targetReal);
+      if (!info.isFile()) {
+        return `declared path is not a regular file: ${relativePath}`;
+      }
+    } catch {
+      return `declared file is missing or unresolvable: ${relativePath}`;
+    }
+  }
+  return null;
+}
+
 function refuse(reasonCode: ReasonCode, detail: string): DiscoveryRefused {
   // discovered --fail--> blocked：走表，不手写状态字面量。
   const t = transition("discovered", "fail");
@@ -77,6 +117,13 @@ export async function discoverPlugin(
   const validated = validateManifest(raw, host.hostVersion);
   if (!validated.ok) {
     return refuse(validated.reasonCode, validated.detail);
+  }
+  const containment = await verifyContainedRegularFiles(packageDir, [
+    validated.manifest.entrypoint,
+    ...validated.manifest.contextInjections.map((injection) => injection.source),
+  ]);
+  if (containment !== null) {
+    return refuse("MANIFEST_INVALID", containment);
   }
   const conflict = checkIdConflict(validated.manifest.id, host.activeIds);
   if (!conflict.ok) {

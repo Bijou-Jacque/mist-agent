@@ -297,6 +297,21 @@ describe("validateBindings — env 形状与完备性 (PV0-A05 / PV0-A09 判据)
   });
 });
 
+describe("153/19F 反例二回归：configSchemaVersion 非安全整数折叠", () => {
+  it("JSON 原文 2^53 与 2^53+1 折叠为同一 Number——两者均按非安全整数拒绝", () => {
+    // TS 字面量写不出 2^53+1（编译期即折叠 biome noPrecisionLoss 拦截）——
+    // 真实攻击面是 JSON 原文经 JSON.parse 折叠 故回归走原文路径。
+    for (const text of ["9007199254740992", "9007199254740993"]) {
+      const folded = JSON.parse(`{"v":${text}}`) as { v: number };
+      const r = validateManifest(minimalManifest({ configSchemaVersion: folded.v }), HOST);
+      expect(r).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
+    }
+    expect(
+      validateManifest(minimalManifest({ configSchemaVersion: 9007199254740991 }), HOST).ok,
+    ).toBe(true);
+  });
+});
+
 describe("②段互审三反例回归（166/15F：大整数折叠 · 生 JSON 绑定 · NUL 路径）", () => {
   it("反例一：超 MAX_SAFE_INTEGER 的数字段拒绝解析 不折叠误比", () => {
     expect(parseSemVer("9007199254740992.0.0")).toBeNull();

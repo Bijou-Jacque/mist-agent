@@ -193,10 +193,12 @@ export function validateManifest(raw: unknown, hostVersion: string): ManifestVal
   }
   if (
     typeof raw.configSchemaVersion !== "number" ||
-    !Number.isInteger(raw.configSchemaVersion) ||
+    !Number.isSafeInteger(raw.configSchemaVersion) ||
     raw.configSchemaVersion < 0
   ) {
-    return invalid("configSchemaVersion must be a non-negative integer");
+    // isSafeInteger 而非 isInteger（153/19F 反例二）：JSON 的 2^53 与 2^53+1 会折叠成
+    // 同一个 Number，schema 身份随之别名——超安全整数一律拒。
+    return invalid("configSchemaVersion must be a non-negative safe integer");
   }
 
   if (!Array.isArray(raw.capabilities)) return invalid("capabilities must be an array");
