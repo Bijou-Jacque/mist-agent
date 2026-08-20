@@ -56,10 +56,15 @@ export interface PluginPrepareContext {
   register(resource: ResourceDeclaration): DisposableHandle;
 }
 
-/** Terminal dispose accounting. Only an empty `failed` array is a clean unload (PV0-C07). */
+/**
+ * Terminal dispose accounting. Only an empty `failed` array is a clean unload (PV0-C07).
+ * `reasonCode` stays `string` per RFC §3: the §8 table is the host's stable MINIMUM
+ * ("至少给出"), and resource-level failures may surface plugin-specific codes beyond it —
+ * hosts still emit {@link ReasonCode} members for every host-judged failure.
+ */
 export interface DisposeReport {
   readonly revoked: readonly string[];
-  readonly failed: readonly { id: string; reasonCode: ReasonCode }[];
+  readonly failed: readonly { id: string; reasonCode: string }[];
 }
 
 /** An activated (published) plugin. Callers MUST inspect `failed[]` on dispose. Idempotent. RFC §3. */
@@ -120,10 +125,14 @@ export interface RecoveredPlugin {
 }
 
 /**
- * Shape of an upgrade/migration request (RFC §7). The concrete shape belongs to the
- * E-series scope and is not consumed by 单B; kept opaque until that work lands.
+ * An upgrade/migration request, verbatim from RFC §7. `config` is a deep copy and
+ * never contains credential values; migration semantics belong to the E-series scope.
  */
-export type MigrationRequest = unknown;
+export interface MigrationRequest {
+  readonly fromVersion: number;
+  readonly toVersion: number;
+  readonly config: unknown;
+}
 
 /**
  * A plugin module's exported surface. RFC §3 (#62 final ruling): `recover` is an
