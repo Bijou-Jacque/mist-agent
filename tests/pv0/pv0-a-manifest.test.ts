@@ -273,6 +273,33 @@ describe("PV0 series A — Manifest 与兼容性 (RFC §2)", () => {
     expect(on2.state).toBe("active");
     expect(calls.slice(before)).toEqual(["prepare", "resource.activate", "publish"]);
     expect(host.publishedResources("demo.toggle")).toHaveLength(1);
+
+    // 生产入口：prepare 失败 → blocked 后仍可显式停用（153/30F 回归）
+    const blockedBase = {
+      ...base,
+      pluginId: "demo.blocked",
+      module: {
+        async prepare(): Promise<import("../../src/plugin/types.ts").PreparedPlugin> {
+          throw new Error("prepare failed on purpose");
+        },
+      },
+    };
+    const failedOn = await applyEnabledChange(host, store, {
+      ...blockedBase,
+      config: { enabled: true, settings, environment: [], credentialRefs: {} },
+    });
+    expect(failedOn).toMatchObject({ state: "blocked", reasonCode: "PREPARE_FAILED" });
+    const off2 = await applyEnabledChange(host, store, {
+      ...blockedBase,
+      config: { enabled: false, settings, environment: [], credentialRefs: {} },
+    });
+    expect(off2.state).toBe("disposed");
+    const parked2 = store.read("demo.blocked");
+    expect(parked2.lifecycleState).toBe("disposed");
+    expect(parked2.enabled).toBe(false);
+    expect((parked2.config as { enabled: boolean }).enabled).toBe(false);
+    expect((parked2.config as { settings: unknown }).settings).toEqual(settings);
+    expect(host.publishedResources("demo.blocked")).toEqual([]);
   });
 
   it("[PV0-A08] plugin id 封口", async () => {

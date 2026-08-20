@@ -206,7 +206,39 @@ export class PluginTransactionHost {
     if (existing.lifecycleState === "disposed") return this.#outcome(existing);
     const runtime = this.#active.get(pluginId);
     if (runtime === undefined) {
-      throw new Error(`plugin ${pluginId} has no current-process active handles`);
+      if (
+        existing.lifecycleState !== "blocked" ||
+        existing.operation.phase !== "completed" ||
+        this.#remaining(existing).length > 0
+      ) {
+        throw new Error(`plugin ${pluginId} has no current-process active handles`);
+      }
+      // lifecycle 表既有边 blocked ─显式停用─→ disposing：仅当回滚已完成且零剩余资源时
+      // 放行显式停用，走零资源的持久 disposing → disposed（不伪造 active handle；
+      // quarantined 仍只走显式 retryCleanup，不经此路）。
+      const parked: PluginAuthorityRecord = {
+        ...existing,
+        lifecycleState: "disposing",
+        operation: {
+          operationId: this.#newOperationId(),
+          operation: "dispose",
+          phase: "disposing",
+          moduleRef: existing.moduleRef,
+          resources: [],
+          rollbackCompleted: false,
+          disposeCompleted: false,
+          cleanupAttempts: [],
+        },
+      };
+      Reflect.deleteProperty(parked, "reasonCode");
+      Reflect.deleteProperty(parked, "quarantine");
+      this.#store.save(parked);
+      this.#published.delete(pluginId);
+      parked.lifecycleState = "disposed";
+      parked.operation.phase = "completed";
+      parked.operation.disposeCompleted = true;
+      this.#store.save(parked);
+      return this.#outcome(parked);
     }
 
     const operationId = this.#newOperationId();
