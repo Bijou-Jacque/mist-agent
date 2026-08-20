@@ -23,22 +23,43 @@ export interface SemVer {
 const VERSION_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?$/;
 
-/** 严格解析完整 SemVer；不合形态返回 null，绝不猜。 */
+/**
+ * 数字标识符安全门：超过 Number.MAX_SAFE_INTEGER 的数字段一律拒绝解析——
+ * 否则 9007199254740992 与 9007199254740993 会折叠成同一个 major，requiresMist 的
+ * 精确/边界比较随之误判（②段互审反例一）。拒绝仍是子集哲学：不猜、不折叠。
+ */
+function safeNumericIdentifier(text: string): number | null {
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/** 严格解析完整 SemVer；不合形态或数字段超安全整数返回 null，绝不猜。 */
 export function parseSemVer(input: string): SemVer | null {
   const m = VERSION_RE.exec(input);
-  if (m === null) {
+  if (m === null || m[1] === undefined || m[2] === undefined || m[3] === undefined) {
     return null;
   }
-  const prerelease =
-    m[4] === undefined
-      ? []
-      : m[4].split(".").map((part) => (/^(0|[1-9]\d*)$/.test(part) ? Number(part) : part));
-  return {
-    major: Number(m[1]),
-    minor: Number(m[2]),
-    patch: Number(m[3]),
-    prerelease,
-  };
+  const major = safeNumericIdentifier(m[1]);
+  const minor = safeNumericIdentifier(m[2]);
+  const patch = safeNumericIdentifier(m[3]);
+  if (major === null || minor === null || patch === null) {
+    return null;
+  }
+  const prerelease: (string | number)[] = [];
+  if (m[4] !== undefined) {
+    for (const part of m[4].split(".")) {
+      if (/^(0|[1-9]\d*)$/.test(part)) {
+        const n = safeNumericIdentifier(part);
+        if (n === null) {
+          return null;
+        }
+        prerelease.push(n);
+      } else {
+        prerelease.push(part);
+      }
+    }
+  }
+  return { major, minor, patch, prerelease };
 }
 
 /** SemVer 精确优先级比较：负=a<b，0=相等，正=a>b。含 prerelease 规则（spec §11）。 */

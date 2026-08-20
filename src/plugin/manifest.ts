@@ -127,6 +127,11 @@ function isStringArray(v: unknown): v is string[] {
  */
 export function isSealedRelativePath(p: string): boolean {
   if (p === "" || p.startsWith("/") || p.startsWith("\\")) return false;
+  // 控制字符冻结策略（②段互审反例三）：NUL 会让 Node 文件 API 在后场炸
+  // ERR_INVALID_ARG_VALUE，不是 fail-closed；一并冻结全部 C0 控制符与 DEL——
+  // 路径里没有任何合法理由出现它们。
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: 这里就是要拒绝控制字符
+  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
   if (/^[A-Za-z]:/.test(p)) return false;
   if (p.includes("\\")) return false;
   const segments = p.split("/");
@@ -297,6 +302,10 @@ export type BindingValidation =
   | { readonly ok: true; readonly resolvedNames: readonly string[] }
   | { readonly ok: false; readonly reasonCode: ReasonCode; readonly detail: string };
 
+function bindingInvalid(detail: string): BindingValidation {
+  return { ok: false, reasonCode: "CONFIG_INVALID", detail };
+}
+
 /**
  * env 绑定形状与完备性（PV0-A05 / PV0-A09），纯判定不解析 secret：
  * - secret:true 只允许 secretRef；secret:false 只允许 value；错配 → CONFIG_INVALID
@@ -304,14 +313,48 @@ export type BindingValidation =
  * - required 声明缺绑定 → REQUIREMENT_MISSING；optional 缺绑定合法（不出现在交付集）
  * - required credential slot 缺 ref → REQUIREMENT_MISSING；未知 slot 的 ref → CONFIG_INVALID
  * 返回的 resolvedNames 即今后 `context.env` 的键集合（PV0-A10 的交付面由引擎层实现）。
+ *
+ * 入口吃 `unknown`（②段互审反例二）：instance config 是住户 JSON，运行时形状必须在此
+ * 完整定型——容器不对、value/secretRef 非字符串、credential ref 缺字段，一律
+ * CONFIG_INVALID fail-closed，绝不 TypeError 炸出去，也绝不放数字冒充 secretRef。
  */
-export function validateBindings(
-  manifest: PluginManifestV0,
-  config: PluginInstanceConfig,
-): BindingValidation {
+export function validateBindings(manifest: PluginManifestV0, config: unknown): BindingValidation {
+  if (!isRecord(config)) {
+    return bindingInvalid("instance config must be a plain JSON object");
+  }
+  if (typeof config.enabled !== "boolean") {
+    return bindingInvalid("instance config: enabled must be boolean");
+  }
+  if (!Array.isArray(config.environment)) {
+    return bindingInvalid("instance config: environment must be an array");
+  }
+  if (!isRecord(config.credentialRefs)) {
+    return bindingInvalid("instance config: credentialRefs must be an object");
+  }
+  const environment: unknown[] = config.environment;
+  const credentialRefs: Record<string, unknown> = config.credentialRefs;
+
   const declared = new Map(manifest.env.map((e) => [e.name, e]));
   const bound = new Set<string>();
-  for (const b of config.environment) {
+  for (const rawBinding of environment) {
+    if (!isRecord(rawBinding)) {
+      return bindingInvalid("environment binding must be an object");
+    }
+    if (typeof rawBinding.name !== "string" || rawBinding.name === "") {
+      return bindingInvalid("environment binding: name must be a non-empty string");
+    }
+    if (rawBinding.value !== undefined && typeof rawBinding.value !== "string") {
+      return bindingInvalid(`env ${rawBinding.name}: value must be a string when present`);
+    }
+    if (
+      rawBinding.secretRef !== undefined &&
+      (typeof rawBinding.secretRef !== "string" || rawBinding.secretRef === "")
+    ) {
+      return bindingInvalid(
+        `env ${rawBinding.name}: secretRef must be a non-empty string when present`,
+      );
+    }
+    const b = rawBinding as { name: string; value?: string; secretRef?: string };
     const decl = declared.get(b.name);
     if (decl === undefined) {
       return {
@@ -357,9 +400,25 @@ export function validateBindings(
       };
     }
   }
+  for (const [slot, rawRef] of Object.entries(credentialRefs)) {
+    if (!manifest.credentials.some((c) => c.slot === slot)) {
+      return bindingInvalid(`credential ref for undeclared slot: ${slot}`);
+    }
+    if (
+      !isRecord(rawRef) ||
+      typeof rawRef.id !== "string" ||
+      rawRef.id === "" ||
+      typeof rawRef.type !== "string" ||
+      !CREDENTIAL_TYPES.includes(rawRef.type as CredentialType) ||
+      typeof rawRef.issuerId !== "string" ||
+      rawRef.issuerId === ""
+    ) {
+      return bindingInvalid(`credential ref for slot ${slot} is malformed`);
+    }
+  }
   for (const cred of manifest.credentials) {
-    const ref = config.credentialRefs[cred.slot];
-    if (ref === undefined) {
+    const rawRef = credentialRefs[cred.slot];
+    if (rawRef === undefined) {
       if (cred.required) {
         return {
           ok: false,
@@ -369,20 +428,12 @@ export function validateBindings(
       }
       continue;
     }
+    const ref = rawRef as CredentialRef; // 形状已在上一段完整定型
     if (!cred.accepts.includes(ref.type)) {
       return {
         ok: false,
         reasonCode: "CREDENTIAL_TYPE_MISMATCH",
         detail: `slot ${cred.slot}: ref type ${ref.type} not in accepts`,
-      };
-    }
-  }
-  for (const slot of Object.keys(config.credentialRefs)) {
-    if (!manifest.credentials.some((c) => c.slot === slot)) {
-      return {
-        ok: false,
-        reasonCode: "CONFIG_INVALID",
-        detail: `credential ref for undeclared slot: ${slot}`,
       };
     }
   }

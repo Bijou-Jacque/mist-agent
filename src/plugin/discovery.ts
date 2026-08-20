@@ -92,10 +92,11 @@ export async function discoverPlugin(
 /**
  * 实例配置就绪门（PV0-A05/A09 的引擎位）：validated 之后、prepare 之前调用。
  * 只做形状与完备性判定，不解析任何 secretRef 值——解析发生在执行边界（②段之后）。
+ * 入口收 unknown：住户 JSON 的运行时形状由 validateBindings 完整定型 fail-closed。
  */
 export function checkInstanceConfig(
   manifest: PluginManifestV0,
-  config: PluginInstanceConfig,
+  config: unknown,
 ): ReturnType<typeof validateBindings> {
   return validateBindings(manifest, config);
 }

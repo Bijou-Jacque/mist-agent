@@ -296,3 +296,74 @@ describe("validateBindings — env 形状与完备性 (PV0-A05 / PV0-A09 判据)
     expect(undeclared).toMatchObject({ ok: false, reasonCode: "CONFIG_INVALID" });
   });
 });
+
+describe("②段互审三反例回归（166/15F：大整数折叠 · 生 JSON 绑定 · NUL 路径）", () => {
+  it("反例一：超 MAX_SAFE_INTEGER 的数字段拒绝解析 不折叠误比", () => {
+    expect(parseSemVer("9007199254740992.0.0")).toBeNull();
+    expect(parseSemVer("9007199254740993.0.0")).toBeNull();
+    expect(parseSemVer("1.0.0-rc.9007199254740993")).toBeNull();
+    expect(parseSemVer("9007199254740991.0.0")).not.toBeNull();
+  });
+
+  it("反例二：绑定层吃生 JSON——坏容器/非字符串 ref 一律 CONFIG_INVALID 不抛 TypeError", () => {
+    const manifest = asManifest({
+      env: [{ name: "SECRET", description: "", required: true, secret: true }],
+      credentials: [{ slot: "brain", accepts: ["claude_oauth"], required: false }],
+    });
+    expect(
+      validateBindings(manifest, {
+        enabled: true,
+        settings: {},
+        environment: [{ name: "SECRET", secretRef: 42 }],
+        credentialRefs: {},
+      }),
+    ).toMatchObject({ ok: false, reasonCode: "CONFIG_INVALID" });
+    expect(
+      validateBindings(manifest, {
+        enabled: true,
+        settings: {},
+        environment: null,
+        credentialRefs: {},
+      }),
+    ).toMatchObject({ ok: false, reasonCode: "CONFIG_INVALID" });
+    expect(validateBindings(manifest, null)).toMatchObject({
+      ok: false,
+      reasonCode: "CONFIG_INVALID",
+    });
+    expect(validateBindings(manifest, "nope")).toMatchObject({
+      ok: false,
+      reasonCode: "CONFIG_INVALID",
+    });
+    expect(
+      validateBindings(manifest, {
+        enabled: true,
+        settings: {},
+        environment: [{ name: "SECRET", secretRef: "vault:s" }],
+        credentialRefs: { brain: { id: "", type: "claude_oauth", issuerId: "i" } },
+      }),
+    ).toMatchObject({ ok: false, reasonCode: "CONFIG_INVALID" });
+    expect(
+      validateBindings(manifest, {
+        enabled: true,
+        settings: {},
+        environment: [{ name: "SECRET", secretRef: "vault:s" }],
+        credentialRefs: "nope",
+      }),
+    ).toMatchObject({ ok: false, reasonCode: "CONFIG_INVALID" });
+  });
+
+  it("反例三：路径含 NUL/控制字符按 A04 fail-closed 不留给 Node 后场炸", () => {
+    expect(isSealedRelativePath("dist/\u0000index.js")).toBe(false);
+    expect(isSealedRelativePath("dist/\u0001x.js")).toBe(false);
+    expect(isSealedRelativePath("dist/\u007fx.js")).toBe(false);
+    const nulEntry = validateManifest(minimalManifest({ entrypoint: "dist/\u0000index.js" }), HOST);
+    expect(nulEntry).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
+    const nulSource = validateManifest(
+      minimalManifest({
+        contextInjections: [{ id: "g", source: "docs/\u0000g.md", scope: "resident" }],
+      }),
+      HOST,
+    );
+    expect(nulSource).toMatchObject({ ok: false, reasonCode: "MANIFEST_INVALID" });
+  });
+});
